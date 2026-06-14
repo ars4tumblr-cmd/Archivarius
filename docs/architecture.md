@@ -12,33 +12,37 @@ Contact: github.com/ars4tumblr-cmd
 Archivarius is an **on-premise corporate search engine** over the company's document repository (PDF, DOCX, TXT, HTML). Not a cloud service. Not SaaS. Not an AI assistant.
 
 **Technically:** hybrid BM25 + vector search using a local multilingual embedding model.  
-**Practically:** employees search documents via a browser вЂ” the system finds by content, not just by keywords.
+**Practically:** employees search documents via a browser — the system finds by content, not just by keywords.
 
 ---
 
 ## 2. System Architecture
 
 ```
-в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ
-в”‚                    CORPORATE SERVER                         в”‚
-в”‚                                                             в”‚
-в”‚  [Documents]                                                в”‚
-в”‚      в†“ Ingestion Pipeline (PDF/DOCX/TXT/HTML)               в”‚
-в”‚  [Chunking в†’ Embedding в†’ Indexing]                          в”‚
-в”‚      в†“                                                      в”‚
-в”‚  в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ    в”Њв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ             в”‚
-в”‚  в”‚  BM25 Index    в”‚    в”‚  Qdrant Vector DB     в”‚             в”‚
-в”‚  в”‚  (./data/bm25) в”‚    в”‚  (Docker container)   в”‚             в”‚
-в”‚  в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”¬в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”    в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”¬в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”            в”‚
-в”‚           в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”¬в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”                         в”‚
-в”‚                      в†“ Hybrid Search + Reranking            в”‚
-в”‚  [FastAPI Backend :8000]                                    в”‚
-в”‚      в†“ JWT auth                                             в”‚
-в”‚  [Next.js Frontend :3000]   [Web Admin :8080]               в”‚
-в”‚                                                             в”‚
-в”‚  [LibreTranslate :5000] в†ђ optional, internal only          в”‚
-в””в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”
-         в†• NO outbound connections at runtime
+┌─────────────────────────────────────────────────────────────┐
+│                    CORPORATE SERVER                         │
+│                                                             │
+│  [Documents]                                                │
+│      ↓ Ingestion Pipeline (PDF/DOCX/TXT/HTML)               │
+│  [Chunking]                                                 │
+│          ↓                        ↓                         │
+│   [BM25 Indexer]        [Embedding Model]                   │
+│   (sparse/keyword)       (multilingual-e5)                  │
+│          ↓                        ↓                         │
+│  ┌────────────────┐    ┌──────────────────────┐             │
+│  │  BM25 Index    │    │  Qdrant Vector DB     │            │
+│  │  (./data/bm25) │    │  (Docker container)   │            │
+│  └────────┬───────┘    └──────────┬────────────┘            │
+│           └──────────┬────────────┘                         │
+│                      ↓ Hybrid Search + Reranking            │
+│  [FastAPI Backend :8000]                                    │
+│      ↓ JWT auth                                             │
+│  [Next.js Frontend :3000]   [Web Admin :8080]               │
+│                                                             │
+│  [LibreTranslate :5000] <- optional, internal only          │
+│                                                             │
+│       ↕ NO outbound connections at runtime                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Two isolated pipelines:**
@@ -60,7 +64,7 @@ Archivarius is an **on-premise corporate search engine** over the company's docu
 | Orchestration | Docker Compose | Standard | Apache 2.0 | Host OS |
 
 **All versions pinned.** The `latest` tag is forbidden for production.  
-**SBOM (Software Bill of Materials вЂ” a full list of all components and their exact versions):** ready to provide for IT review.
+**SBOM (Software Bill of Materials — a full list of all components and their exact versions):** ready to provide for IT review.
 
 ---
 
@@ -71,7 +75,7 @@ Archivarius is an **on-premise corporate search engine** over the company's docu
 | Component | RAM idle | RAM peak |
 |-----------|----------|----------|
 | E5-Large embedding | 2.5 GB | 3.0 GB |
-| Qdrant vector DB | 2.0вЂ“4.0 GB | 5.0 GB |
+| Qdrant vector DB | 2.0–4.0 GB | 5.0 GB |
 | BM25 + Cache | 0.6 GB | 1.3 GB |
 | FastAPI backend | 0.3 GB | 1.0 GB |
 | Next.js frontend | 0.2 GB | 0.5 GB |
@@ -92,7 +96,7 @@ Archivarius is an **on-premise corporate search engine** over the company's docu
 |------|------|
 | AI model (E5-Large) | ~6 GB |
 | Qdrant storage | Depends on document corpus |
-| BM25 index | ~0.5вЂ“2 GB |
+| BM25 index | ~0.5–2 GB |
 | Logs + feedback | Rotation: 30/90 days |
 
 ---
@@ -102,16 +106,16 @@ Archivarius is an **on-premise corporate search engine** over the company's docu
 ### 5.1 Network Isolation
 
 ```yaml
-# docker-compose.yml вЂ” network boundary schema
+# docker-compose.yml — network boundary schema
 services:
-  backend:        # expose :8000 в†’ only via reverse proxy
+  backend:        # expose :8000 → only via reverse proxy
   qdrant:         # internal only, NOT exposed externally
   libretranslate: # internal only, NOT exposed externally
-  frontend:       # expose :3000 в†’ via nginx/reverse proxy
+  frontend:       # expose :3000 → via nginx/reverse proxy
 
 networks:
-  internal:  # Qdrant and LibreTranslate вЂ” internal only
-  external:  # backend and frontend вЂ” via reverse proxy
+  internal:  # Qdrant and LibreTranslate — internal only
+  external:  # backend and frontend — via reverse proxy
 ```
 
 **Runtime:** zero outbound connections from containers. Model loaded locally (`HF_HUB_OFFLINE=1`).
@@ -135,7 +139,7 @@ networks:
 
 - Queries logged as `SHA-256 hash`, not plaintext
 - Feedback signals: `hashed user_id` + `query_hash` (not query text)
-- Retention: operational logs вЂ” 30 days, feedback вЂ” 90 days (configurable)
+- Retention: operational logs — 30 days, feedback — 90 days (configurable)
 
 ### 5.5 GDPR / NDA Compliance
 
@@ -167,14 +171,14 @@ curl http://localhost:8000/api/v1/health   # health check
 For fully isolated environments:
 1. Prepare **offline artifact bundle** (Docker images + model files + checksums + SBOM)
 2. Transfer to isolated server
-3. `docker compose up -d` вЂ” with no internet access whatsoever
+3. `docker compose up -d` — with no internet access whatsoever
 
 ### 6.3 Production Hardening (Required)
 
 - [ ] Image versions pinned to digest (not `latest`)
 - [ ] TLS termination via nginx or corporate reverse proxy
-- [ ] Qdrant and LibreTranslate вЂ” internal network only
-- [ ] Admin endpoints вЂ” behind VPN/intranet allowlist
+- [ ] Qdrant and LibreTranslate — internal network only
+- [ ] Admin endpoints — behind VPN/intranet allowlist
 - [ ] JWT secret via env/secret store (not git)
 - [ ] `HF_HUB_OFFLINE=1` in production runtime
 - [ ] Backup encryption for `./data/` directory
@@ -195,18 +199,18 @@ For fully isolated environments:
 
 ```
 GET /api/v1/health
-в†’ { "status": "ok", "components": { "qdrant": "ok", "embedding": "ok", ... } }
+→ { "status": "ok", "components": { "qdrant": "ok", "embedding": "ok", ... } }
 
 GET /api/v1/stats
-в†’ { "total_documents": 1247, "total_chunks": 48392, "index_size_mb": 2150 }
+→ { "total_documents": 1247, "total_chunks": 48392, "index_size_mb": 2150 }
 ```
 
 ### 7.2 Prometheus-Compatible Metrics
 
-- `search_latency_ms` вЂ” search response time
-- `indexing_documents_total` вЂ” number of indexed documents
-- `ram_usage_bytes` вЂ” RAM consumption
-- `index_consistency_status` вЂ” index consistency (1=ok, 0=problem)
+- `search_latency_ms` — search response time
+- `indexing_documents_total` — number of indexed documents
+- `ram_usage_bytes` — RAM consumption
+- `index_consistency_status` — index consistency (1=ok, 0=problem)
 
 ### 7.3 Backup
 
@@ -217,36 +221,36 @@ cp    ./data/file_hashes.json ./backup/
 cp -r ./data/feedback    ./backup/feedback_$(date +%Y%m%d)
 ```
 
-Backup contains indices and embeddings в†’ store encrypted (treated as equivalent to corporate documents in terms of confidentiality level).
+Backup contains indices and embeddings → store encrypted (treated as equivalent to corporate documents in terms of confidentiality level).
 
 ### 7.4 Document Updates
 
-New documents в†’ copied to `./documents/` в†’ automatically indexed.  
+New documents → copied to `./documents/` → automatically indexed.  
 No manual steps. Changes in documents detected via SHA-256 hash.
 
 ---
 
 ## 8. Supply Chain / Component Inventory
 
-- All components: open source, public repositories вЂ” anyone can review the code
+- All components: open source, public repositories — anyone can review the code
 - Python dependencies: pinned versions in `requirements.txt` (not "latest version", but specific ones)
 - Docker images: pinned to specific version
 - AI model: downloaded from Hugging Face, with checksum verification
-- **SBOM (Software Bill of Materials вЂ” a complete list of all components, their versions, and licenses):** ready to hand over to IT for review. License inventory: MIT/Apache/EUPL вЂ” corporate use permitted free of charge.
-- **Security vulnerability scanning:** before production rollout, all components are checked against known vulnerabilities in public databases (CVE вЂ” Common Vulnerabilities and Exposures вЂ” is a public database of known security flaws in software, like a catalog of patched and unpatched "holes").
+- **SBOM (Software Bill of Materials — a complete list of all components, their versions, and licenses):** ready to hand over to IT for review. License inventory: MIT/Apache/EUPL — corporate use permitted free of charge.
+- **Security vulnerability scanning:** before production rollout, all components are checked against known vulnerabilities in public databases (CVE — Common Vulnerabilities and Exposures — is a public database of known security flaws in software, like a catalog of patched and unpatched "holes").
 
 ---
 
 ## 9. IT FAQ
 
 **Q: Who will maintain the system?**  
-A: The system is designed so that maintenance is minimal (Docker lifecycle: start/stop/restart/backup/restore). During the pilot вЂ” technical support from the developer. For production вЂ” either an internal company developer or an external contractor familiar with the Docker/Python stack. A Runbook (step-by-step operational guide covering startup, shutdown, restore, and backup) will be provided with the prototype.
+A: The system is designed so that maintenance is minimal (Docker lifecycle: start/stop/restart/backup/restore). During the pilot — technical support from the developer. For production — either an internal company developer or an external contractor familiar with the Docker/Python stack. A Runbook (step-by-step operational guide covering startup, shutdown, restore, and backup) will be provided with the prototype.
 
 **Q: Does it need internet access?**  
-A: Only during initial setup (downloading the AI model and Docker components, ~6вЂ“10 GB). After that вЂ” runtime is completely offline.
+A: Only during initial setup (downloading the AI model and Docker components, ~6–10 GB). After that — runtime is completely offline.
 
 **Q: What are the licenses?**  
-A: MIT, Apache 2.0, EUPL вЂ” all permit corporate use without payments. Full component list (SBOM вЂ” Software Bill of Materials, i.e. an inventory of all libraries and versions) is available at [Archivarius v3.0.3](https://github.com/ars4tumblr-cmd/Archivarius/blob/main/docs/spec_v303.md).
+A: MIT, Apache 2.0, EUPL — all permit corporate use without payments. Full component list (SBOM — Software Bill of Materials, i.e. an inventory of all libraries and versions) is available at [Archivarius v3.0.3](https://github.com/ars4tumblr-cmd/Archivarius/blob/main/docs/spec_v303.md).
 
 **Q: Is a GPU required?**  
 A: No. The system is designed for CPU-only. GPU can be added for acceleration (optional).
@@ -255,13 +259,13 @@ A: No. The system is designed for CPU-only. GPU can be added for acceleration (o
 A: It does not replace but complements. Archivarius indexes documents independently of the storage platform. Integration with AD/LDAP for authentication is possible.
 
 **Q: What if the system breaks?**  
-A: Docker restart. If needed вЂ” full restore from backup (procedure described in the Runbook). The system is idempotent вЂ” repeated re-indexing produces the same result.
+A: Docker restart. If needed — full restore from backup (procedure described in the Runbook). The system is idempotent — repeated re-indexing produces the same result.
 
 **Q: Can access to specific documents be restricted?**  
 A: Base version: user/admin roles. Extended version (Phase 3): multi-user roles (admin/editor/viewer).
 
 **Q: Where are the documents physically stored?**  
-A: `./documents/` вЂ” originals (read-only for the system). `./data/` вЂ” indices, embeddings, logs. All on the same server, under IT control.
+A: `./documents/` — originals (read-only for the system). `./data/` — indices, embeddings, logs. All on the same server, under IT control.
 
 ---
 
